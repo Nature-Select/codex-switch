@@ -26,6 +26,7 @@ Codex 同一时间只认 `~/.codex/auth.json` 里的一个账号。手上有多�
 
 ```fish
 brew tap nature-select/codex-switch https://github.com/Nature-Select/codex-switch
+brew trust nature-select/codex-switch   # 新版 Homebrew 要求显式信任第三方 tap
 brew install codex-switch
 ```
 
@@ -175,6 +176,7 @@ It does not bypass any Codex limit, never sends credentials anywhere, and never 
 
 ```bash
 brew tap nature-select/codex-switch https://github.com/Nature-Select/codex-switch
+brew trust nature-select/codex-switch   # recent Homebrew requires trusting third-party taps
 brew install codex-switch
 ```
 
