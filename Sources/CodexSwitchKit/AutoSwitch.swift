@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum AutoSwitchDecision: Equatable {
@@ -74,15 +75,17 @@ public enum AutoAgent {
         Shell.status("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]) == 0
     }
 
-    /// The path the agent will run. Resolved at install time, because the agent
-    /// outlives this process and cannot ask us later.
+    /// The path the agent will run. Asked of the kernel rather than derived from
+    /// argv[0], which is a bare name when the tool is found on PATH. Symlinks are
+    /// deliberately left alone: `/opt/homebrew/bin/codex-switch` keeps working
+    /// across upgrades, while the Cellar path it points at does not.
     public static func currentExecutable() -> URL {
-        let raw = CommandLine.arguments.first ?? "codex-switch"
-        let resolved = URL(fileURLWithPath: raw).resolvingSymlinksInPath()
-        if resolved.path.hasPrefix("/") {
-            return resolved
+        var capacity = UInt32(PATH_MAX)
+        var buffer = [CChar](repeating: 0, count: Int(capacity))
+        guard _NSGetExecutablePath(&buffer, &capacity) == 0 else {
+            return URL(fileURLWithPath: CommandLine.arguments.first ?? "codex-switch")
         }
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(raw)
+        return URL(fileURLWithPath: String(cString: buffer)).standardizedFileURL
     }
 
     public static func install(executable: URL, intervalSeconds: Int, environment: CodexEnvironment) throws {
