@@ -33,6 +33,12 @@
 - Several short-lived CLI runs can touch the registry at once. Mutations go through `RegistryStore`, which re-reads the file if it changed underneath.
 - `CommandLine.arguments[0]` is what the launchd job will run, so `auto enable` must resolve it to an absolute path.
 
+## Releasing
+
+- `Version.current` in `Sources/CodexSwitchKit/AppServer.swift` is the single source of truth; the release workflow refuses a tag that disagrees with it.
+- Tagging `v<version>` builds a universal binary, publishes it with checksums, and opens a PR that points the Homebrew formula at the new tarball. `main` requires PRs, so that bump is never pushed directly.
+- `codex-switch update` reads the published release, so a release without the `codex-switch-macos-universal.tar.gz` asset breaks self-update.
+
 ## Build And Test
 
 ```bash

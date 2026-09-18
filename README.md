@@ -61,6 +61,7 @@ env PREFIX=$HOME/.local bash scripts/install.sh  # 或装到自己的目录
 | `codex-switch forget <账号>` | 移除账号 |
 | `codex-switch repair` | 认领磁盘上有凭据、但注册表里没记录的目录 |
 | `codex-switch migrate` | 从旧的 `Codex Manager` 目录导入账号 |
+| `codex-switch update` | 更新 codex-switch 自己 |
 | `codex-switch paths` | 查看数据存放位置 |
 
 `<账号>` 可以写列表序号、显示名、邮箱或 id，写唯一前缀即可：
@@ -96,6 +97,15 @@ codex-switch use 2
 ```
 
 序号是稳定引用：无论怎么排序，`use 2` 永远指向同一个账号。
+
+### 更新自己
+
+```fish
+codex-switch update --check   # 只看有没有新版本
+codex-switch update           # 更新
+```
+
+brew 装的会走 `brew update && brew upgrade codex-switch`；直接下载安装的会拉最新 release、校验 sha256 后原地替换二进制（目录没权限时会提示用 sudo）。
 
 ### 自动切换
 
@@ -196,6 +206,7 @@ Or grab the release tarball (universal arm64 + x86_64), or build from source wit
 | `codex-switch rename` / `forget` | Relabel or drop an account |
 | `codex-switch repair` | Re-register account directories missing from the registry |
 | `codex-switch migrate` | Import accounts from a `Codex Manager` directory |
+| `codex-switch update` | Update codex-switch itself |
 | `codex-switch paths` | Show where everything is stored |
 
 Accounts are named by list number, label, email, or id prefix. Every command supports `--json` and `--no-color`; `codex-switch help <command>` has the details.

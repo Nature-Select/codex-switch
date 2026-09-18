@@ -25,6 +25,14 @@ jobs:
           echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
           echo "TARBALL=codex-switch-${TAG#v}-macos-universal.tar.gz" >> "$GITHUB_ENV"
 
+      - name: Check the tag matches the version in the source
+        run: |
+          DECLARED="$(grep -o 'let current = "[^"]*"' Sources/CodexSwitchKit/AppServer.swift | cut -d'"' -f2)"
+          if [[ "$DECLARED" != "$VERSION" ]]; then
+            echo "::error::Tag v${VERSION} does not match Version.current (${DECLARED})."
+            exit 1
+          fi
+
       - name: Self-tests
         run: swift run CodexSwitchSelfTest
 
@@ -68,4 +76,5 @@ jobs:
           git push origin "$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "chore: point formula at v${VERSION}" \
-            --body "Homebrew formula now points at the v${VERSION} tarball."
+            --body "Homebrew formula now points at the v${VERSION} tarball." \
+            | tee -a "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,8 @@ public enum Runner {
                 try await Commands.repair(arguments, json: json)
             case "migrate":
                 try await Commands.migrate(arguments, json: json)
+            case "update", "upgrade", "self-update":
+                try await Commands.update(arguments, json: json)
             case "paths", "path", "dir":
                 try await Commands.paths(arguments, json: json)
             default:

@@ -93,6 +93,16 @@ enum Help {
                 "Import accounts from the menu-bar app this CLI replaces.",
                 "Credentials are copied, not moved, so the old directory stays intact."
             ])
+        case "update", "upgrade":
+            page("codex-switch update [--check] [--yes]", [
+                "Update codex-switch itself from the latest GitHub release.",
+                "",
+                "  --check   Only report whether an update exists.",
+                "  --yes     Do not ask before replacing the binary.",
+                "",
+                "A Homebrew install is upgraded through `brew upgrade`; a standalone",
+                "binary is replaced in place after its published checksum is verified."
+            ])
         case "paths":
             page("codex-switch paths [--open] [--json]", [
                 "Print where the registry, account homes, and logs live."
@@ -134,6 +144,7 @@ enum Help {
         ("forget <account>", "Drop an account from the registry"),
         ("repair", "Re-register account directories missing from the registry"),
         ("migrate", "Import accounts from the old menu-bar app"),
+        ("update", "Update codex-switch itself"),
         ("paths", "Show where everything is stored"),
         ("version", "Print the version")
     ]

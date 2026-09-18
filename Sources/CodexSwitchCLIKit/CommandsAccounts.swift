@@ -255,6 +255,86 @@ extension Commands {
         }
     }
 
+    struct UpdatePayload: Encodable {
+        var currentVersion: String
+        var latestVersion: String
+        var updateAvailable: Bool
+        var installedVia: String
+        var binary: String
+    }
+
+    static func update(_ arguments: Arguments, json: Bool) async throws {
+        try arguments.check(allowing: ["check", "yes"])
+
+        let binary = AutoAgent.currentExecutable()
+        let installation = Updater.installation(of: binary)
+        let release: Updater.Release
+        do {
+            release = try await Updater.latest()
+        } catch {
+            throw CLIError(error.localizedDescription)
+        }
+
+        let available = Updater.isNewer(release.version, than: Version.current)
+        let via: String
+        switch installation {
+        case .homebrew: via = "homebrew"
+        case .standalone: via = "standalone"
+        }
+
+        if json {
+            try Term.emit(UpdatePayload(
+                currentVersion: Version.current,
+                latestVersion: release.version,
+                updateAvailable: available,
+                installedVia: via,
+                binary: binary.path
+            ))
+            if !available || arguments.flag("check") { return }
+        } else {
+            Term.say(Present.field("Installed", Version.current + Style.faint("  ·  \(binary.path)")))
+            Term.say(Present.field("Latest", release.version))
+        }
+
+        guard available else {
+            if !json { Term.say(Style.green("✓") + " Already up to date.") }
+            return
+        }
+        if arguments.flag("check") {
+            if !json {
+                Term.say(Style.yellow("An update is available.") + Style.faint("  `codex-switch update` installs it."))
+            }
+            return
+        }
+
+        switch installation {
+        case let .homebrew(formula):
+            if !json {
+                Term.say(Style.faint("Installed with Homebrew — upgrading through brew."))
+            }
+            guard Shell.status("/bin/sh", ["-lc", "brew update && brew upgrade \(formula)"]) == 0 else {
+                throw CLIError("`brew upgrade \(formula)` failed. Run it by hand to see why.")
+            }
+            if !json {
+                Term.say(Style.green("✓") + " Updated to \(release.version).")
+            }
+        case let .standalone(target):
+            if !arguments.flag("yes"), Term.interactive, !json {
+                guard Term.confirm("Replace \(target.path) with \(release.version)?", standard: true) else {
+                    throw CLIError("Cancelled.", code: 130)
+                }
+            }
+            let landed = try await Updater.install(release, over: target)
+            if !json {
+                Term.say(Style.green("✓") + " Updated to \(release.version)" + Style.faint("  ·  \(landed.path)"))
+            }
+        }
+
+        if AutoAgent.isInstalled {
+            Term.say(Style.faint("  The auto-switch job keeps pointing at \(binary.path) — no action needed."))
+        }
+    }
+
     private static func choose(_ accounts: [StoredAccount], json: Bool) throws -> String {
         guard Term.interactive, !json else {
             throw CLIError("Usage: codex-switch use <account>", code: 2)

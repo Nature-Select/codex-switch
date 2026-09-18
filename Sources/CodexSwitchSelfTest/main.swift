@@ -309,6 +309,27 @@ func testLegacyImportCopiesAccountsWithoutMovingThem() throws {
     try expect(again.imported.isEmpty && again.skipped == 1, "Expected a second import to be a no-op.")
 }
 
+func testUpdateComparesVersionsAndSpotsHomebrew() throws {
+    try expect(Updater.isNewer("1.1.0", than: "1.0.9"), "Expected a minor bump to count as newer.")
+    try expect(Updater.isNewer("1.0.10", than: "1.0.9"), "Expected numeric, not lexical, comparison.")
+    try expect(Updater.isNewer("2.0", than: "1.9.9"), "Expected a missing patch component to be treated as zero.")
+    try expect(!Updater.isNewer("1.0.1", than: "1.0.1"), "Expected the same version not to be newer.")
+    try expect(!Updater.isNewer("1.0.0", than: "1.1.0"), "Expected an older release not to be newer.")
+
+    switch Updater.installation(of: URL(fileURLWithPath: "/opt/homebrew/bin/codex-switch")) {
+    case .homebrew: break
+    case .standalone: throw Failure(message: "Expected a Homebrew prefix to be recognised.")
+    }
+    switch Updater.installation(of: URL(fileURLWithPath: "/usr/local/Cellar/codex-switch/1.0.0/bin/codex-switch")) {
+    case .homebrew: break
+    case .standalone: throw Failure(message: "Expected a Cellar path to be recognised.")
+    }
+    switch Updater.installation(of: URL(fileURLWithPath: "/Users/someone/.local/bin/codex-switch")) {
+    case .homebrew: throw Failure(message: "Expected a plain path to be treated as standalone.")
+    case let .standalone(binary): try expect(binary.lastPathComponent == "codex-switch", "Expected the binary path back.")
+    }
+}
+
 func XCTUnwrap<T>(_ value: T?, _ message: String) throws -> T {
     guard let value else { throw Failure(message: "Expected a value: \(message)") }
     return value
@@ -326,7 +347,8 @@ let tests: [(String, () throws -> Void)] = [
     ("desktop app is found by bundle identifier", testDesktopAppIsFoundByBundleIdentifier),
     ("labels follow the email until someone renames them", testLabelsFollowTheEmailUntilSomeoneRenamesThem),
     ("orphan directories are detected", testOrphanDirectoriesAreDetected),
-    ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem)
+    ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem),
+    ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew)
 ]
 
 var failures = 0
