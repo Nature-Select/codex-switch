@@ -55,16 +55,63 @@ public enum Updater {
     }
 
     public static func latest() async throws -> Release {
+        do {
+            return try await latestFromAPI()
+        } catch {
+            // The API allows 60 anonymous calls an hour per address, and a
+            // shared address burns through that. The web redirect is not
+            // rate-limited the same way and still names the release.
+            return try await latestFromRedirect()
+        }
+    }
+
+    /// `/releases/latest` redirects to `/releases/tag/vX.Y.Z`, and release asset
+    /// URLs are predictable, so this needs no API budget at all.
+    static func latestFromRedirect() async throws -> Release {
+        var request = URLRequest(url: URL(string: "https://github.com/\(repository)/releases/latest")!)
+        request.httpMethod = "HEAD"
+        request.setValue("codex-switch/\(Version.current)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 20
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard
+            let http = response as? HTTPURLResponse,
+            http.statusCode == 200,
+            let landed = http.url
+        else {
+            throw UpdateError.releaseUnavailable("HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        }
+
+        let tag = landed.lastPathComponent
+        guard tag.hasPrefix("v"), tag.contains(".") else {
+            throw UpdateError.releaseUnavailable("could not read a version from \(landed.absoluteString)")
+        }
+
+        let base = "https://github.com/\(repository)/releases/download/\(tag)"
+        return Release(
+            version: String(tag.dropFirst()),
+            tarball: URL(string: "\(base)/\(assetName)")!,
+            checksum: URL(string: "\(base)/\(assetName).sha256"),
+            notesURL: landed
+        )
+    }
+
+    static func latestFromAPI() async throws -> Release {
         let endpoint = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
         var request = URLRequest(url: endpoint)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("codex-switch/\(Version.current)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 20
 
+        let environment = ProcessInfo.processInfo.environment
+        if let token = environment["GITHUB_TOKEN"] ?? environment["GH_TOKEN"], !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw UpdateError.releaseUnavailable("HTTP \(code)")
+            throw UpdateError.releaseUnavailable(code == 403 ? "HTTP 403 (rate limited)" : "HTTP \(code)")
         }
         guard
             let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
