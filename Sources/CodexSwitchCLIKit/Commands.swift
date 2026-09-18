@@ -76,6 +76,10 @@ extension Commands {
             Term.say(Present.field("Saved as", Style.yellow("✗ not saved yet") + Style.faint("  ·  `codex-switch adopt` keeps it")))
         }
 
+        if let account, !account.isUsable {
+            Term.say(Present.field("Sign-in", Style.red("expired or revoked") + Style.faint("  ·  `codex-switch add` signs in again")))
+        }
+
         for line in Present.quotaLines(account?.quota) {
             Term.say(line)
         }
@@ -129,10 +133,16 @@ extension Commands {
         headers += ["RESETS IN", "RESET AT", "CHECKED"]
 
         let rows = ordered.map { position, account -> [String] in
+            let marker: String
+            if account.id == activeID {
+                marker = account.isUsable ? Style.green("●") : Style.red("●")
+            } else {
+                marker = account.isUsable ? " " : Style.yellow("!")
+            }
             var row = [
                 "\(position)",
-                account.id == activeID ? Style.green("●") : " ",
-                Layout.clip(account.label, 28)
+                marker,
+                account.isUsable ? Layout.clip(account.label, 28) : Style.faint(Layout.clip(account.label, 28))
             ]
             if showEmail { row.append(Layout.clip(account.email ?? "–", 30)) }
             row.append(account.plan ?? "–")
@@ -145,6 +155,15 @@ extension Commands {
         }
 
         Term.say(Present.table(headers, rows))
+
+        let signedOut = accounts.filter { !$0.isUsable }
+        if !signedOut.isEmpty {
+            Term.say()
+            Term.say(Style.yellow("\(signedOut.count) account\(signedOut.count == 1 ? "" : "s") marked ! ha\(signedOut.count == 1 ? "s" : "ve") an expired or revoked sign-in:"))
+            for account in signedOut {
+                Term.say(Style.faint("  \(account.label) — `codex-switch add` and sign in to it again"))
+            }
+        }
 
         let orphans = manager.orphans().filter(\.hasCredentials)
         if !orphans.isEmpty {

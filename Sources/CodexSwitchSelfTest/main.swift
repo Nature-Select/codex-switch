@@ -330,6 +330,27 @@ func testUpdateComparesVersionsAndSpotsHomebrew() throws {
     }
 }
 
+func testRevokedAccountsAreRecognisedAndSkipped() throws {
+    let revoked = """
+    failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed:     401 Unauthorized; body={"error":{"message":"Encountered invalidated oauth token for user,     failing request","code":"token_revoked"}}
+    """
+    try expect(AccountManager.isSignedOut(revoked), "Expected a revoked token to be recognised.")
+    try expect(!AccountManager.isSignedOut("The Internet connection appears to be offline."), "Expected a network failure not to look like a revoked login.")
+    try expect(
+        AccountManager.explain(CodexSwitchError.appServerFailed(revoked)).contains("codex-switch add"),
+        "Expected the explanation to say what to do about it."
+    )
+
+    let healthy = QuotaReport(windows: [QuotaWindow(usedPercent: 0, durationMinutes: QuotaReport.weeklyMinutes, resetsAt: nil)])
+    let dead = StoredAccount(id: "dead", label: "dead", homePath: "/tmp/dead", quota: healthy, needsSignIn: true)
+    let alive = StoredAccount(id: "alive", label: "alive", homePath: "/tmp/alive", quota: QuotaReport(windows: [QuotaWindow(usedPercent: 50, durationMinutes: QuotaReport.weeklyMinutes, resetsAt: nil)]))
+    let current = StoredAccount(id: "current", label: "current", homePath: "/tmp/current", quota: QuotaReport(windows: [QuotaWindow(usedPercent: 99, durationMinutes: QuotaReport.weeklyMinutes, resetsAt: nil)]))
+
+    // The revoked account still shows 100% left; it must not win anyway.
+    let ranked = AutoSwitchPlanner.candidates(among: [current, dead, alive], excluding: "current", atLeast: 5)
+    try expect(ranked.map(\.id) == ["alive"], "Expected a revoked account to be skipped despite its stale quota.")
+}
+
 func XCTUnwrap<T>(_ value: T?, _ message: String) throws -> T {
     guard let value else { throw Failure(message: "Expected a value: \(message)") }
     return value
@@ -348,7 +369,8 @@ let tests: [(String, () throws -> Void)] = [
     ("labels follow the email until someone renames them", testLabelsFollowTheEmailUntilSomeoneRenamesThem),
     ("orphan directories are detected", testOrphanDirectoriesAreDetected),
     ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem),
-    ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew)
+    ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew),
+    ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped)
 ]
 
 var failures = 0

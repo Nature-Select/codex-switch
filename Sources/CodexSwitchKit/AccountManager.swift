@@ -8,7 +8,7 @@ public struct Orphan {
 
 public struct RefreshOutcome {
     public var updated: [StoredAccount] = []
-    public var failed: [(account: StoredAccount, reason: String)] = []
+    public var failed: [(account: StoredAccount, reason: String, signedOut: Bool)] = []
 }
 
 /// The operations the CLI is made of. Nothing here prints; callers decide what
@@ -109,6 +109,8 @@ public final class AccountManager {
         if var existing = store.account(fingerprint: fingerprint) {
             try credentials.adopt(stagedHome: login.stagedHome, as: existing.home)
             existing.apply(identity: identity)
+            existing.needsSignIn = nil
+            existing.lastError = nil
             if let label { existing.label = label }
             existing = await enrich(existing, allowLabelChange: label == nil)
             try store.save(existing)
@@ -177,17 +179,22 @@ public final class AccountManager {
                     copy.lastError = nil
                     outcome.updated.append(copy)
                 case let .failure(error):
-                    outcome.failed.append((account, error.localizedDescription))
+                    // Classify the raw message; `explain` rewrites it for people.
+                    let signedOut = AccountManager.isSignedOut(error.localizedDescription)
+                    outcome.failed.append((account, AccountManager.explain(error), signedOut))
                 }
             }
         }
 
         for account in outcome.updated {
-            try? store.save(account)
+            var copy = account
+            copy.needsSignIn = nil
+            try? store.save(copy)
         }
         for failure in outcome.failed {
             var copy = failure.account
             copy.lastError = failure.reason
+            copy.needsSignIn = failure.signedOut ? true : copy.needsSignIn
             try? store.save(copy)
         }
 
@@ -236,6 +243,22 @@ public final class AccountManager {
     public func localActivity(for account: StoredAccount?) -> LocalActivity {
         LocalActivityReader(environment: environment)
             .measure(sessions: account.map { store.sessions(of: $0.id) } ?? [])
+    }
+
+    /// Codex reports a revoked or expired login as an HTTP 401 wrapped in a
+    /// JSON-RPC error; the wording is long and the useful part is buried.
+    public static func isSignedOut(_ reason: String) -> Bool {
+        let haystack = reason.lowercased()
+        return haystack.contains("token_revoked")
+            || haystack.contains("401 unauthorized")
+            || haystack.contains("invalidated oauth token")
+            || haystack.contains("requires authentication")
+    }
+
+    public static func explain(_ error: Error) -> String {
+        let raw = error.localizedDescription
+        guard isSignedOut(raw) else { return raw }
+        return "Sign-in expired or revoked — run `codex-switch add` and sign in to this account again."
     }
 
     private func enrich(_ account: StoredAccount, allowLabelChange: Bool) async -> StoredAccount {

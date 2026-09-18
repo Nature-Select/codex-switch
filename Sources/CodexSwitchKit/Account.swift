@@ -12,6 +12,10 @@ public struct StoredAccount: Codable, Equatable, Identifiable {
     public var checkedAt: Date?
     public var quota: QuotaReport?
     public var lastError: String?
+    /// Set when Codex says the stored token is no longer valid. The quota
+    /// numbers stay for reference, but they describe an account that cannot be
+    /// used until someone signs in again.
+    public var needsSignIn: Bool?
 
     public init(
         id: String = UUID().uuidString,
@@ -23,7 +27,8 @@ public struct StoredAccount: Codable, Equatable, Identifiable {
         addedAt: Date = Date(),
         checkedAt: Date? = nil,
         quota: QuotaReport? = nil,
-        lastError: String? = nil
+        lastError: String? = nil,
+        needsSignIn: Bool? = nil
     ) {
         self.id = id
         self.label = label
@@ -35,6 +40,11 @@ public struct StoredAccount: Codable, Equatable, Identifiable {
         self.checkedAt = checkedAt
         self.quota = quota
         self.lastError = lastError
+        self.needsSignIn = needsSignIn
+    }
+
+    public var isUsable: Bool {
+        needsSignIn != true
     }
 
     public var home: URL {

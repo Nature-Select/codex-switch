@@ -20,6 +20,9 @@ public enum AutoSwitchPlanner {
     ) -> [StoredAccount] {
         var scored: [(account: StoredAccount, remaining: Int)] = []
         for account in accounts where account.id != currentID {
+            // A revoked account keeps the quota it had when it died, which would
+            // otherwise make it look like the most attractive target of all.
+            guard account.isUsable else { continue }
             guard let remaining = account.quota?.remainingPercent, remaining >= threshold else { continue }
             scored.append((account, remaining))
         }

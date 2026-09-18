@@ -30,11 +30,18 @@ public struct CodexService {
         try await AppServerSession.withSession(codexHome: codexHome) { session in
             var snapshot = AccountSnapshot()
             snapshot.identity = try? await readIdentity(session)
-            if let reply = try? await session.send("account/rateLimits/read", [:]) {
-                snapshot.quota = QuotaReport.parse(reply)
+
+            var quotaFailure: Error?
+            do {
+                snapshot.quota = QuotaReport.parse(try await session.send("account/rateLimits/read", [:]))
+            } catch {
+                quotaFailure = error
             }
+
             if snapshot.isEmpty {
-                throw CodexSwitchError.appServerFailed("Codex returned no account data for \(codexHome.path).")
+                // Report what Codex actually said — "revoked" and "offline" need
+                // very different things from the user.
+                throw quotaFailure ?? CodexSwitchError.appServerFailed("Codex returned no account data for \(codexHome.path).")
             }
             // The local credential file names the account even when the
             // app-server is still warming up.
