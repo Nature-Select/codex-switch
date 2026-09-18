@@ -1,10 +1,10 @@
 class CodexSwitch < Formula
   desc "Keep several Codex accounts side by side and switch between them"
   homepage "https://github.com/Nature-Select/codex-switch"
-  url "https://github.com/Nature-Select/codex-switch/releases/download/v1.1.0/codex-switch-1.1.0-macos-universal.tar.gz"
-  sha256 "7b5b17e89ad4b9d2b75134a6e29d0892983f99fad8da9708f8457ac6ce6643c7"
+  url "https://github.com/Nature-Select/codex-switch/releases/download/v1.1.1/codex-switch-1.1.1-macos-universal.tar.gz"
+  sha256 "e0c2d52fdddda0de5f72e260c1e5f152ebc4475d6869d42397cab8e1fbf663fa"
   license "MIT"
-  version "1.1.0"
+  version "1.1.1"
 
   depends_on :macos
 
