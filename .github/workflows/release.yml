@@ -34,20 +34,6 @@ jobs:
           cp ".build/${TARBALL}" ".build/codex-switch-macos-universal.tar.gz"
           cp ".build/${TARBALL}.sha256" ".build/codex-switch-macos-universal.tar.gz.sha256"
 
-      - name: Point the formula at this release
-        run: |
-          SHA="$(cat ".build/${TARBALL}.sha256")"
-          /usr/bin/sed -i '' \
-            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${TARBALL}\"|" \
-            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
-            -e "s|version \".*\"|version \"${VERSION}\"|" \
-            Formula/codex-switch.rb
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/codex-switch.rb
-          git commit -m "chore: point formula at v${VERSION}" || exit 0
-          git push origin main
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -58,3 +44,27 @@ jobs:
             .build/${{ env.TARBALL }}.sha256
             .build/codex-switch-macos-universal.tar.gz
             .build/codex-switch-macos-universal.tar.gz.sha256
+
+      - name: Open a formula bump PR
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="$(cat ".build/${TARBALL}.sha256")"
+          BRANCH="formula/v${VERSION}"
+          /usr/bin/sed -i '' \
+            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${TARBALL}\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
+            -e "s|version \".*\"|version \"${VERSION}\"|" \
+            Formula/codex-switch.rb
+
+          git diff --quiet Formula/codex-switch.rb && exit 0
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "chore: point formula at v${VERSION}"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore: point formula at v${VERSION}" \
+            --body "Homebrew formula now points at the v${VERSION} tarball."
