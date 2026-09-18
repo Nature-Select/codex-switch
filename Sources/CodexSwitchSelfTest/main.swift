@@ -351,6 +351,69 @@ func testRevokedAccountsAreRecognisedAndSkipped() throws {
     try expect(ranked.map(\.id) == ["alive"], "Expected a revoked account to be skipped despite its stale quota.")
 }
 
+func testReauthRefusesToOverwriteWithADifferentAccount() throws {
+    let root = scratch()
+    let env = environment(root)
+    let manager = try AccountManager(environment: env)
+
+    let home = env.accountHome("target")
+    try writeCredentials(home, accountID: "acct_target", email: "target@example.com")
+    let fingerprint = try CredentialStore().fingerprint(in: home)
+    let account = StoredAccount(
+        id: "target",
+        label: "target",
+        email: "target@example.com",
+        fingerprint: fingerprint,
+        homePath: home.path,
+        needsSignIn: true
+    )
+    try manager.store.save(account)
+    let originalCredentials = try Data(contentsOf: CodexEnvironment.credentialFile(in: home))
+
+    // Signing in as someone else must leave the account it was aimed at alone.
+    let strangerStaging = env.stagingHome("stranger")
+    try writeCredentials(strangerStaging, accountID: "acct_stranger", email: "stranger@example.com")
+    let refusal = try runAsync {
+        try await manager.reauthenticate(account, stagedHome: strangerStaging, identity: AccountIdentity(email: "stranger@example.com", plan: nil))
+    }
+    guard case let .wrongAccount(signedInAs) = refusal else {
+        throw Failure(message: "Expected a different account to be refused.")
+    }
+    try expect(signedInAs == "stranger@example.com", "Expected the refusal to name who signed in.")
+    let afterRefusal = try Data(contentsOf: CodexEnvironment.credentialFile(in: home))
+    try expect(afterRefusal == originalCredentials, "Expected the target's credentials to be untouched.")
+    try expect(manager.store.account(id: "target")?.needsSignIn == true, "Expected the account to still need a sign-in.")
+
+    // The right account restores it, keeping label and id.
+    let properStaging = env.stagingHome("proper")
+    try writeCredentials(properStaging, accountID: "acct_target", email: "target@example.com")
+    let outcome = try runAsync {
+        try await manager.reauthenticate(account, stagedHome: properStaging, identity: AccountIdentity(email: "target@example.com", plan: "pro"))
+    }
+    guard case let .restored(restored) = outcome else {
+        throw Failure(message: "Expected the matching account to be restored.")
+    }
+    try expect(restored.id == "target" && restored.label == "target", "Expected identity and label to survive.")
+    try expect(restored.needsSignIn == nil, "Expected the sign-in mark to be cleared.")
+    try expect(!FileManager.default.fileExists(atPath: properStaging.path), "Expected staging to be consumed.")
+}
+
+/// The self-tests are synchronous; this bridges the few async entry points.
+func runAsync<T>(_ body: @escaping () async throws -> T) throws -> T {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: Result<T, Error>!
+    Task {
+        do {
+            result = .success(try await body())
+        } catch {
+            result = .failure(error)
+        }
+        semaphore.signal()
+    }
+    semaphore.wait()
+    return try result.get()
+}
+
 func XCTUnwrap<T>(_ value: T?, _ message: String) throws -> T {
     guard let value else { throw Failure(message: "Expected a value: \(message)") }
     return value
@@ -370,7 +433,8 @@ let tests: [(String, () throws -> Void)] = [
     ("orphan directories are detected", testOrphanDirectoriesAreDetected),
     ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem),
     ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew),
-    ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped)
+    ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped),
+    ("reauth refuses to overwrite with a different account", testReauthRefusesToOverwriteWithADifferentAccount)
 ]
 
 var failures = 0

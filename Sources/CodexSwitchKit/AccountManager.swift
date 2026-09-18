@@ -134,6 +134,42 @@ public final class AccountManager {
         return (account, false)
     }
 
+    public enum ReauthOutcome {
+        case restored(StoredAccount)
+        /// The sign-in succeeded but produced a different account than the one
+        /// being repaired — overwriting it would silently lose an account.
+        case wrongAccount(signedInAs: String?)
+    }
+
+    /// Replaces one account's credentials with a fresh sign-in. Used when the
+    /// stored token was revoked, which no amount of refreshing can fix.
+    public func reauthenticate(
+        _ account: StoredAccount,
+        stagedHome: URL,
+        identity: AccountIdentity
+    ) async throws -> ReauthOutcome {
+        guard let fresh = try credentials.fingerprint(in: stagedHome) else {
+            throw CodexSwitchError.loginIncomplete
+        }
+
+        if let expected = account.fingerprint, expected != fresh {
+            let signedInAs = identity.email ?? credentials.identity(in: stagedHome)?.email
+            credentials.discard(stagedHome.deletingLastPathComponent())
+            return .wrongAccount(signedInAs: signedInAs)
+        }
+
+        try credentials.adopt(stagedHome: stagedHome, as: account.home)
+
+        var restored = account
+        restored.fingerprint = fresh
+        restored.needsSignIn = nil
+        restored.lastError = nil
+        restored.apply(identity: identity)
+        restored = await enrich(restored, allowLabelChange: false)
+        try store.save(restored)
+        return .restored(restored)
+    }
+
     public func forget(_ account: StoredAccount, deleteCredentials: Bool) throws {
         let removed = try store.forget(id: account.id)
         if deleteCredentials {

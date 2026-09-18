@@ -69,6 +69,17 @@ enum Help {
                 "With no argument it refreshes the account in use; --all sweeps every",
                 "account, several at a time."
             ])
+        case "reauth", "relogin":
+            page("codex-switch reauth <account> [--switch] [--timeout <seconds>] [--no-open]", [
+                "Sign in again to an account whose stored login was revoked, keeping",
+                "its label, id and history. An ordinary expiry does not need this —",
+                "Codex renews those on its own; a revoked login cannot be renewed.",
+                "",
+                "If the browser sign-in produces a different account, nothing is",
+                "changed: `codex-switch add` is how a new account gets saved.",
+                "",
+                "  --switch   Make it the active account once it is restored."
+            ])
         case "rename":
             page("codex-switch rename <account> <new-label>", [
                 "Change an account's label. Credentials are untouched."
@@ -140,6 +151,7 @@ enum Help {
         ("adopt", "Save the account you are signed in as"),
         ("auto", "Switch automatically when quota runs low"),
         ("refresh [<account>]", "Ask Codex for fresh quota numbers"),
+        ("reauth <account>", "Sign in again to an account whose login was revoked"),
         ("rename <account>", "Change an account's label"),
         ("forget <account>", "Drop an account from the registry"),
         ("repair", "Re-register account directories missing from the registry"),

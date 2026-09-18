@@ -41,6 +41,8 @@ public enum Runner {
                 try await Commands.auto(arguments, json: json)
             case "refresh":
                 try await Commands.refresh(arguments, json: json)
+            case "reauth", "relogin":
+                try await Commands.reauth(arguments, json: json)
             case "rename":
                 try await Commands.rename(arguments, json: json)
             case "forget", "remove", "rm", "delete":

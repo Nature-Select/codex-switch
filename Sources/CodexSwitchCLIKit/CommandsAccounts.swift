@@ -116,6 +116,65 @@ extension Commands {
         }
     }
 
+    static func reauth(_ arguments: Arguments, json: Bool) async throws {
+        try arguments.check(allowing: ["yes", "switch", "timeout", "open", "no-open"])
+        let manager = try AccountManager()
+        guard let reference = arguments.positionals.first else {
+            throw CLIError("Usage: codex-switch reauth <account>", code: 2)
+        }
+        let account = try Lookup.find(reference, in: manager.accounts)
+
+        if account.isUsable, !arguments.flag("yes"), Term.interactive, !json {
+            guard Term.confirm("\(account.label) looks fine. Sign in to it again anyway?", standard: false) else {
+                throw CLIError("Cancelled.", code: 130)
+            }
+        }
+
+        let login = try await manager.service.beginDeviceLogin()
+        defer { login.session.shutdown() }
+
+        if json {
+            Term.warn("Code \(login.userCode) — \(login.verificationURL.absoluteString)")
+        } else {
+            let copied = Term.interactive && Term.copyToClipboard(login.userCode)
+            Term.say("Sign in as " + Style.bold(account.email ?? account.label) + " to restore this account.")
+            Term.say()
+            Term.say(Present.field("Code", Style.bold(login.userCode) + (copied ? Style.faint("  (copied to clipboard)") : "")))
+            Term.say(Present.field("URL", login.verificationURL.absoluteString))
+            Term.say()
+            Term.say(Style.faint("Waiting for the browser sign-in… (Ctrl-C to cancel)"))
+        }
+
+        if arguments.flag("open") || (!arguments.flag("no-open") && !json && Term.interactive) {
+            Shell.status("/usr/bin/open", [login.verificationURL.absoluteString])
+        }
+
+        let timeout = TimeInterval(arguments.number("timeout") ?? 300)
+        let identity: AccountIdentity
+        do {
+            identity = try await manager.service.awaitLogin(login, timeout: timeout)
+        } catch {
+            manager.credentials.discard(login.stagedHome.deletingLastPathComponent())
+            throw CLIError("Sign-in did not complete within \(Int(timeout))s. Nothing was changed.")
+        }
+
+        switch try await manager.reauthenticate(account, stagedHome: login.stagedHome, identity: identity) {
+        case let .wrongAccount(signedInAs):
+            let who = signedInAs ?? "another account"
+            throw CLIError("You signed in as \(who), not \(account.email ?? account.label). Nothing was changed — `codex-switch add` saves \(who) as its own account.")
+        case let .restored(restored):
+            if arguments.flag("switch") {
+                try manager.activate(restored, restartDesktop: DesktopApp.isRunning)
+            }
+            if json {
+                try Term.emit(AccountPayload(restored, isActive: arguments.flag("switch")))
+            } else {
+                let left = restored.quota?.remainingPercent.map { "  ·  " + Present.percent($0) + " left" } ?? ""
+                Term.say(Style.green("✓") + " Restored " + Style.bold(restored.label) + Style.faint(left))
+            }
+        }
+    }
+
     static func rename(_ arguments: Arguments, json: Bool) async throws {
         try arguments.check(allowing: [])
         guard arguments.positionals.count >= 2 else {

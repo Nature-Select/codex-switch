@@ -57,6 +57,7 @@ env PREFIX=$HOME/.local bash scripts/install.sh  # 或装到自己的目录
 | `codex-switch adopt` | 把当前已登录的账号纳入管理 |
 | `codex-switch auto` | 额度见底时自动切换（默认关闭） |
 | `codex-switch refresh [账号]` | 重新读取额度 |
+| `codex-switch reauth <账号>` | 登录被吊销后重新登录，保留原条目 |
 | `codex-switch rename <账号> <名字>` | 改显示名 |
 | `codex-switch forget <账号>` | 移除账号 |
 | `codex-switch repair` | 认领磁盘上有凭据、但注册表里没记录的目录 |
@@ -97,6 +98,18 @@ codex-switch use 2
 ```
 
 序号是稳定引用：无论怎么排序，`use 2` 永远指向同一个账号。
+
+### 登录失效了怎么办
+
+普通的 token 过期不用管，Codex 会自己续。但如果服务端**吊销**了某个号的授权（登出、被踢等），刷新是救不回来的 —— `refresh` 会把它标成 `!`，`list` 底部会列出来，自动切换也会跳过它（避免切到一个看着还有额度、实际不能用的号）。
+
+修复只能重新登录，用 `reauth` 而不是 `add`，这样原来的显示名、id、历史都保留：
+
+```fish
+codex-switch reauth hayseed          # 浏览器登录那个账号
+```
+
+如果登错了账号，工具会拒绝写入并告诉你实际登录的是谁 —— 想把那个新账号存下来用 `add`。
 
 ### 更新自己
 
@@ -203,6 +216,7 @@ Or grab the release tarball (universal arm64 + x86_64), or build from source wit
 | `codex-switch adopt` | Save the account you are already signed in as |
 | `codex-switch auto` | Switch automatically when quota runs low (off by default) |
 | `codex-switch refresh [account]` | Ask Codex for fresh quota numbers |
+| `codex-switch reauth <account>` | Sign in again after a login was revoked |
 | `codex-switch rename` / `forget` | Relabel or drop an account |
 | `codex-switch repair` | Re-register account directories missing from the registry |
 | `codex-switch migrate` | Import accounts from a `Codex Manager` directory |
