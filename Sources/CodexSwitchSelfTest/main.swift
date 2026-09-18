@@ -399,19 +399,30 @@ func testReauthRefusesToOverwriteWithADifferentAccount() throws {
 }
 
 /// The self-tests are synchronous; this bridges the few async entry points.
+/// The result travels through a reference so nothing mutable is captured by the
+/// concurrently-running task.
+final class ResultBox<T>: @unchecked Sendable {
+    var value: Result<T, Error>?
+}
+
 func runAsync<T>(_ body: @escaping () async throws -> T) throws -> T {
+    let box = ResultBox<T>()
     let semaphore = DispatchSemaphore(value: 0)
-    var result: Result<T, Error>!
+
     Task {
         do {
-            result = .success(try await body())
+            box.value = .success(try await body())
         } catch {
-            result = .failure(error)
+            box.value = .failure(error)
         }
         semaphore.signal()
     }
+
     semaphore.wait()
-    return try result.get()
+    guard let value = box.value else {
+        throw Failure(message: "The asynchronous body produced no result.")
+    }
+    return try value.get()
 }
 
 func XCTUnwrap<T>(_ value: T?, _ message: String) throws -> T {
