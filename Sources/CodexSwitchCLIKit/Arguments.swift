@@ -6,7 +6,7 @@ public struct Arguments {
     private var options: [String: String] = [:]
     private var danglingOption: String?
 
-    public static let valueOptions: Set<String> = ["label", "timeout", "sort", "threshold", "interval"]
+    public static let valueOptions: Set<String> = ["label", "timeout", "sort", "threshold", "interval", "only"]
 
     private static let shorthand: [String: String] = [
         "h": "help",

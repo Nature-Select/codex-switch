@@ -35,8 +35,12 @@ public enum Runner {
                 try await Commands.use(arguments, json: json)
             case "add", "login":
                 try await Commands.add(arguments, json: json)
-            case "adopt", "import":
+            case "adopt":
                 try await Commands.adopt(arguments, json: json)
+            case "export":
+                try await Commands.export(arguments, json: json)
+            case "import":
+                try await Commands.importAccounts(arguments, json: json)
             case "auto":
                 try await Commands.auto(arguments, json: json)
             case "refresh":

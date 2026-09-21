@@ -25,9 +25,10 @@ func environment(_ root: URL) -> CodexEnvironment {
     )
 }
 
-func writeCredentials(_ home: URL, accountID: String, email: String? = nil) throws {
+func writeCredentials(_ home: URL, accountID: String, email: String? = nil, refreshToken: String? = nil) throws {
     try Privacy.makeDirectory(home)
     var tokens: [String: Any] = ["account_id": accountID]
+    if let refreshToken { tokens["refresh_token"] = refreshToken }
     if let email {
         let claims = try JSONSerialization.data(withJSONObject: [
             "email": email,
@@ -44,12 +45,15 @@ func writeCredentials(_ home: URL, accountID: String, email: String? = nil) thro
 }
 
 func testQuotaParsingPrefersTheCodexBucket() throws {
+    // Only a reset still ahead of us counts as the next one, so this has to be
+    // relative — a fixed date turns the test into a time bomb.
+    let resetsAt = Int(Date().addingTimeInterval(3_600).timeIntervalSince1970)
     let reply: [String: Any] = [
         "rateLimits": ["primary": ["usedPercent": 1, "windowDurationMins": 10080]],
         "rateLimitsByLimitId": [
             "codex": [
                 "planType": "pro",
-                "primary": ["usedPercent": 40, "windowDurationMins": 10080, "resetsAt": 1_789_835_666],
+                "primary": ["usedPercent": 40, "windowDurationMins": 10080, "resetsAt": resetsAt],
                 "secondary": ["usedPercent": 90, "windowDurationMins": 300],
                 "credits": ["balance": "0", "hasCredits": false, "unlimited": false]
             ]
@@ -398,6 +402,98 @@ func testReauthRefusesToOverwriteWithADifferentAccount() throws {
     try expect(!FileManager.default.fileExists(atPath: properStaging.path), "Expected staging to be consumed.")
 }
 
+
+func testExportCarriesAccountsToAnotherMachine() throws {
+    let source = environment(scratch())
+    let origin = try AccountManager(environment: source)
+
+    let mainHome = source.accountHome("main")
+    let spareHome = source.accountHome("spare")
+    try writeCredentials(mainHome, accountID: "acct_main", email: "main@example.com")
+    try writeCredentials(spareHome, accountID: "acct_spare", email: "spare@example.com")
+    try origin.store.save(StoredAccount(id: "main", label: "Main", fingerprint: try CredentialStore().fingerprint(in: mainHome), homePath: mainHome.path))
+    try origin.store.save(StoredAccount(id: "spare", label: "Spare", fingerprint: try CredentialStore().fingerprint(in: spareHome), homePath: spareHome.path))
+    try origin.activate(try XCTUnwrap(origin.store.account(id: "main"), "main"), restartDesktop: false)
+
+    // Codex renewed the live account's token since the last switch; the export
+    // has to carry that, not the copy parked next to the account.
+    try writeCredentials(source.liveHome, accountID: "acct_main", email: "main@example.com", refreshToken: "renewed")
+    let renewed = try Data(contentsOf: CodexEnvironment.credentialFile(in: source.liveHome))
+    let parked = try Data(contentsOf: CodexEnvironment.credentialFile(in: mainHome))
+    try expect(renewed != parked, "Expected the parked copy to be stale for this test.")
+
+    let exported = AccountTransfer.export(origin.accounts, from: origin)
+    try expect(exported.skipped.isEmpty, "Expected every account to be exportable.")
+    try expect(exported.bundle.accounts.count == 2, "Expected both accounts in the bundle.")
+
+    let file = source.stateDirectory.appendingPathComponent("accounts-export.json")
+    try AccountTransfer.write(exported.bundle, to: file)
+    let mode = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber, "permissions")
+    try expect(mode.int16Value == 0o600, "Expected the export to be owner-only.")
+    let text = try XCTUnwrap(String(data: try Data(contentsOf: file), encoding: .utf8), "bundle text")
+    try expect(!text.contains(source.stateDirectory.path), "Expected no local paths in the bundle.")
+
+    // The other Mac: a different state directory, nothing known yet.
+    let destination = environment(scratch())
+    let arrival = try AccountManager(environment: destination)
+    let landed = try AccountTransfer.restore(try AccountTransfer.read(file), into: arrival, replacingKnown: false)
+
+    try expect(landed.added.count == 2 && landed.skipped.isEmpty, "Expected both accounts to land.")
+    let main = try XCTUnwrap(arrival.accounts.first { $0.label == "Main" }, "Main")
+    try expect(main.homePath.hasPrefix(destination.accountsDirectory.path), "Expected the account to live under the receiving state directory.")
+    let travelled = try Data(contentsOf: CodexEnvironment.credentialFile(in: main.home))
+    try expect(travelled == renewed, "Expected the live credentials to travel.")
+    try expect(!arrival.credentials.exists(in: destination.liveHome), "Expected importing not to sign anyone in.")
+
+    // Importing the same bundle again recognises the accounts and leaves them be.
+    try writeCredentials(main.home, accountID: "acct_main", email: "main@example.com", refreshToken: "local")
+    let local = try Data(contentsOf: CodexEnvironment.credentialFile(in: main.home))
+    let again = try AccountTransfer.restore(try AccountTransfer.read(file), into: arrival, replacingKnown: false)
+    try expect(again.added.isEmpty && again.skipped.count == 2, "Expected a repeated import to add nothing.")
+    let kept = try Data(contentsOf: CodexEnvironment.credentialFile(in: main.home))
+    try expect(kept == local, "Expected known accounts to keep their own credentials.")
+    try expect(arrival.accounts.count == 2, "Expected no duplicates.")
+
+    // --replace is what overwrites them.
+    let replaced = try AccountTransfer.restore(try AccountTransfer.read(file), into: arrival, replacingKnown: true)
+    try expect(replaced.replaced.count == 2, "Expected both accounts to be replaced.")
+    let overwritten = try Data(contentsOf: CodexEnvironment.credentialFile(in: main.home))
+    try expect(overwritten == renewed, "Expected the bundle's credentials to win with --replace.")
+    try expect(arrival.accounts.count == 2, "Expected replacing not to duplicate accounts.")
+}
+
+func testImportRejectsTamperedAndForeignFiles() throws {
+    let env = environment(scratch())
+    let manager = try AccountManager(environment: env)
+
+    let home = env.accountHome("one")
+    try writeCredentials(home, accountID: "acct_one", email: "one@example.com")
+    let account = StoredAccount(id: "one", label: "One", fingerprint: try CredentialStore().fingerprint(in: home), homePath: home.path)
+    try manager.store.save(account)
+
+    var bundle = AccountTransfer.export([account], from: manager).bundle
+    // Someone edited the file: the credentials no longer belong to the entry
+    // they are filed under.
+    let other = env.stagingHome("other")
+    try writeCredentials(other, accountID: "acct_other", email: "other@example.com")
+    bundle.accounts[0].auth = try String(data: Data(contentsOf: CodexEnvironment.credentialFile(in: other)), encoding: .utf8) ?? ""
+
+    let target = try AccountManager(environment: environment(scratch()))
+    let outcome = try AccountTransfer.restore(bundle, into: target, replacingKnown: false)
+    try expect(outcome.added.isEmpty, "Expected mismatched credentials to be refused.")
+    try expect(outcome.skipped.first?.reason.contains("do not match") == true, "Expected the refusal to say why.")
+
+    do {
+        _ = try AccountTransfer.decode(Data(#"{"format":"something-else","version":1,"exportedAt":"2026-01-01T00:00:00Z","accounts":[]}"#.utf8))
+        throw Failure(message: "Expected a foreign file to be refused.")
+    } catch is CodexSwitchError {}
+
+    do {
+        _ = try AccountTransfer.decode(Data("not json at all".utf8))
+        throw Failure(message: "Expected garbage to be refused.")
+    } catch is CodexSwitchError {}
+}
+
 /// The self-tests are synchronous; this bridges the few async entry points.
 /// The result travels through a reference so nothing mutable is captured by the
 /// concurrently-running task.
@@ -445,7 +541,9 @@ let tests: [(String, () throws -> Void)] = [
     ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem),
     ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew),
     ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped),
-    ("reauth refuses to overwrite with a different account", testReauthRefusesToOverwriteWithADifferentAccount)
+    ("reauth refuses to overwrite with a different account", testReauthRefusesToOverwriteWithADifferentAccount),
+    ("export carries accounts to another machine", testExportCarriesAccountsToAnotherMachine),
+    ("import rejects tampered and foreign files", testImportRejectsTamperedAndForeignFiles)
 ]
 
 var failures = 0
