@@ -142,8 +142,14 @@ extension Commands {
         for account in outcome.added {
             Term.say(Style.green("✓") + " Imported " + Style.bold(account.label) + Style.faint("  ·  \(Present.shortID(account.id))"))
         }
+        let live = manager.accountOwningLiveHome()
         for account in outcome.replaced {
             Term.say(Style.green("✓") + " Replaced credentials for " + Style.bold(account.label))
+            guard account.id == live?.id else { continue }
+            Term.say(Style.faint("  This is the account in use, so ~/.codex now holds the imported sign-in."))
+            if DesktopApp.isRunning {
+                Term.say(Style.yellow("  Restart the ChatGPT desktop app to pick it up."))
+            }
         }
         for skipped in outcome.skipped {
             Term.say(Style.faint("· Skipped \(skipped.label) — \(skipped.reason)"))

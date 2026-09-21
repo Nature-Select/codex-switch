@@ -95,18 +95,34 @@ public enum AccountTransfer {
 
     /// Writes the bundle owner-only and atomically: it holds live tokens, and a
     /// half-written one would look importable.
+    ///
+    /// The scratch file is created `0600` by `open` itself rather than chmod-ed
+    /// afterwards — the destination is a directory the user chose, which may be
+    /// one other people can read, and tightening the mode after the write leaves
+    /// the tokens readable for as long as the write takes.
     public static func write(_ bundle: Bundle, to url: URL) throws {
         let data = try encode(bundle)
         let scratch = url.deletingLastPathComponent()
             .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
-        try data.write(to: scratch, options: [.atomic])
-        Privacy.lockDown(scratch)
-        if FileManager.default.fileExists(atPath: url.path) {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: scratch)
-        } else {
-            try FileManager.default.moveItem(at: scratch, to: url)
+
+        let descriptor = open(scratch.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard descriptor >= 0 else {
+            throw CodexSwitchError.bundleUnreadable("Cannot write \(scratch.path): \(String(cString: strerror(errno))).")
         }
-        Privacy.lockDown(url)
+        do {
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            try handle.write(contentsOf: data)
+            try handle.close()
+        } catch {
+            try? FileManager.default.removeItem(at: scratch)
+            throw error
+        }
+
+        guard rename(scratch.path, url.path) == 0 else {
+            let reason = String(cString: strerror(errno))
+            try? FileManager.default.removeItem(at: scratch)
+            throw CodexSwitchError.bundleUnreadable("Cannot write \(url.path): \(reason).")
+        }
     }
 
     // MARK: - Import
@@ -172,6 +188,14 @@ public enum AccountTransfer {
                     continue
                 }
                 try credentials.copy(from: staged, to: existing.home)
+                // Replacing the credentials of the account that owns ~/.codex
+                // has to reach the live home too: leaving the old sign-in there
+                // would park it back over the imported one at the next switch,
+                // and `use` refuses to re-apply an account that is already
+                // active. Same account either way — nothing is switched.
+                if manager.accountOwningLiveHome()?.id == existing.id {
+                    try credentials.copy(from: staged, to: manager.environment.liveHome)
+                }
 
                 var updated = existing
                 updated.email = entry.email ?? updated.email
@@ -217,11 +241,22 @@ public enum AccountTransfer {
     /// Keeps the exporting machine's id when it is free, so the same account
     /// stays recognisable across machines; falls back to a fresh one when that
     /// id is already taken here.
+    ///
+    /// The id becomes a directory name, so a bundle from elsewhere does not get
+    /// to pick one: anything but a plain component (`../…`, a path, an empty
+    /// string) would place an account home outside the state directory.
     private static func claim(_ id: String, in manager: AccountManager) -> String {
+        guard isPlainComponent(id) else { return UUID().uuidString }
         guard manager.store.account(id: id) == nil else { return UUID().uuidString }
         guard !FileManager.default.fileExists(atPath: manager.environment.accountHome(id).path) else {
             return UUID().uuidString
         }
         return id
+    }
+
+    private static func isPlainComponent(_ id: String) -> Bool {
+        guard !id.isEmpty, id != ".", id != ".." else { return false }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return id.unicodeScalars.allSatisfy(allowed.contains)
     }
 }

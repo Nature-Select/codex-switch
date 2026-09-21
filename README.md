@@ -20,7 +20,7 @@ Codex 同一时间只认 `~/.codex/auth.json` 里的一个账号。手上有多�
 
 `codex-switch` 把每个账号存在各自独立的 Codex home 里，切换时先把当前凭据归位、再原子地换入目标账号，并顺带告诉你每个账号还剩多少额度、什么时候重置。
 
-它不做这些事：不会绕过 Codex 的任何限制；不会把你的凭据传到任何地方；除非你显式开启 `auto`，否则不会自己切换账号。
+它不做这些事：不会绕过 Codex 的任何限制；不会自己把凭据传到任何地方（只有你显式跑 `export` 才会写出一份）；除非你显式开启 `auto`，否则不会自己切换账号。
 
 ### 安装
 
@@ -134,7 +134,7 @@ codex-switch import ~/codex-accounts.json
 codex-switch export - | ssh other-mac codex-switch import -
 ```
 
-导出文件里不含任何本机路径，所以对端的用户名、数据目录放哪都无所谓。导入按凭据所属的账号去重，同一个文件导第二次不会多出一份；已经存在的账号默认原样不动，`--replace` 才会用文件里的凭据覆盖它们。导入不碰 `~/.codex`，当前在用的账号不受影响，导完 `codex-switch refresh --all` 把额度刷新一下即可。
+导出文件里不含任何本机路径，所以对端的用户名、数据目录放哪都无所谓。导入按凭据所属的账号去重，同一个文件导第二次不会多出一份；已经存在的账号默认原样不动，`--replace` 才会用文件里的凭据覆盖它们。导入不会切换账号，当前在用的那个不受影响（只有 `--replace` 覆盖到它时，`~/.codex` 里的那份也会同步更新成导入的凭据 —— 还是同一个账号）。导完 `codex-switch refresh --all` 把额度刷新一下即可。
 
 两点注意：
 
@@ -183,7 +183,7 @@ Codex 实际读取的仍然是 `~/.codex/auth.json`。`codex-switch use` 会：
 
 ### 隐私与安全
 
-- 凭据只保存在本机，不上传任何地方
+- 凭据只保存在本机，不会自动上传到任何地方（`export` 是唯一会把它们写到别处的命令，且需要你显式执行）
 - 注册表 `accounts.json` 只存非敏感元数据；账号 id 以 SHA-256 指纹存储，不存原值
 - 所有目录 `0700`、凭据文件 `0600`，写入采用原子替换
 - 注册表写入前会检查文件是否被其他进程改动，避免并发覆盖
@@ -223,7 +223,7 @@ Codex reads exactly one account from `~/.codex/auth.json`. With more than one ac
 
 `codex-switch` parks every account in its own isolated Codex home, swaps the target in atomically, and shows how much quota each account has left and when it resets.
 
-It does not bypass any Codex limit, never sends credentials anywhere, and never switches accounts on its own unless you enable `auto`.
+It does not bypass any Codex limit, never sends credentials anywhere on its own — only an explicit `export` writes them out — and never switches accounts on its own unless you enable `auto`.
 
 ### Install
 
@@ -275,7 +275,7 @@ codex-switch import ~/codex-accounts.json    # on the other Mac
 codex-switch export - | ssh other-mac codex-switch import -
 ```
 
-The export is one JSON file holding each account's label, last known quota, and its `auth.json` verbatim — no local paths, so the receiving Mac can keep its accounts wherever it likes. Imports are matched by the account the credentials belong to, so running the same import twice adds nothing; accounts already saved there are left alone unless `--replace` is passed, and `~/.codex` is never touched.
+The export is one JSON file holding each account's label, last known quota, and its `auth.json` verbatim — no local paths, so the receiving Mac can keep its accounts wherever it likes. Imports are matched by the account the credentials belong to, so running the same import twice adds nothing; accounts already saved there are left alone unless `--replace` is passed, and nothing is switched — the account in use stays in use.
 
 The file is a set of working sign-ins written `0600`. Move it like a private key and delete it afterwards, and avoid using one account from two Macs at once — Codex rotates refresh tokens, so one machine renewing can invalidate the other's copy.
 
@@ -285,7 +285,7 @@ Accounts live in `~/Library/Application Support/codex-switch/accounts/<id>/home/
 
 ### Privacy
 
-Credentials never leave the Mac. The registry stores only non-sensitive metadata, with account ids kept as SHA-256 fingerprints. Directories are `0700`, credential files `0600`, and writes are atomic.
+Credentials stay on the Mac unless you export them yourself. The registry stores only non-sensitive metadata, with account ids kept as SHA-256 fingerprints. Directories are `0700`, credential files `0600`, and writes are atomic.
 
 ### Development
 

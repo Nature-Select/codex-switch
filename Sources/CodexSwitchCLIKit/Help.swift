@@ -66,12 +66,14 @@ enum Help {
         case "import":
             page("codex-switch import <file> [--replace]", [
                 "Add the accounts from a `codex-switch export` file to this Mac.",
-                "Each one lands in its own home here; ~/.codex is not touched, so the",
+                "Each one lands in its own home here, and nothing is switched — the",
                 "account in use stays in use.",
                 "",
                 "  <file>      The export to read; `-` reads stdin.",
                 "  --replace   Also overwrite the credentials of accounts already saved",
-                "              here. Without it, those are left alone.",
+                "              here. Without it, those are left alone. If one of them is",
+                "              the account in use, ~/.codex is updated with it too —",
+                "              still the same account, so nothing is switched.",
                 "",
                 "Accounts are matched by the account the credentials belong to, not by",
                 "name, so importing the same file twice adds nothing the second time.",
@@ -173,7 +175,7 @@ enum Help {
         Term.say("  " + Layout.padRight("-h, --help", 24) + "Help; `codex-switch help <command>` for details")
         Term.say()
         Term.say(Style.faint("Accounts can be named by list number, label, email, or id."))
-        Term.say(Style.faint("Credentials never leave this Mac: each account keeps its own isolated Codex home."))
+        Term.say(Style.faint("Each account keeps its own isolated Codex home; credentials leave this Mac only when you export them."))
     }
 
     private static let commands: [(String, String)] = [

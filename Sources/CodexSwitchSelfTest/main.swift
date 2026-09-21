@@ -462,6 +462,50 @@ func testExportCarriesAccountsToAnotherMachine() throws {
     try expect(arrival.accounts.count == 2, "Expected replacing not to duplicate accounts.")
 }
 
+func testImportKeepsTheLiveHomeInStepAndDistrustsIDs() throws {
+    let env = environment(scratch())
+    let manager = try AccountManager(environment: env)
+
+    let home = env.accountHome("live")
+    try writeCredentials(home, accountID: "acct_live", email: "live@example.com", refreshToken: "old")
+    let account = StoredAccount(id: "live", label: "Live", fingerprint: try CredentialStore().fingerprint(in: home), homePath: home.path)
+    try manager.store.save(account)
+    try manager.activate(account, restartDesktop: false)
+
+    // An export of the same account taken after Codex renewed its token.
+    let elsewhere = environment(scratch())
+    let other = try AccountManager(environment: elsewhere)
+    let otherHome = elsewhere.accountHome("live")
+    try writeCredentials(otherHome, accountID: "acct_live", email: "live@example.com", refreshToken: "renewed")
+    let copy = StoredAccount(id: "live", label: "Live", fingerprint: try CredentialStore().fingerprint(in: otherHome), homePath: otherHome.path)
+    try other.store.save(copy)
+    let bundle = AccountTransfer.export([copy], from: other).bundle
+    let renewed = try Data(contentsOf: CodexEnvironment.credentialFile(in: otherHome))
+
+    // Replacing the account that owns ~/.codex has to reach the live home too,
+    // or the next switch parks the old sign-in back over the imported one.
+    let outcome = try AccountTransfer.restore(bundle, into: manager, replacingKnown: true)
+    try expect(outcome.replaced.count == 1, "Expected the known account to be replaced.")
+    let parked = try Data(contentsOf: CodexEnvironment.credentialFile(in: home))
+    let liveNow = try Data(contentsOf: CodexEnvironment.credentialFile(in: env.liveHome))
+    try expect(parked == renewed, "Expected the stored copy to be replaced.")
+    try expect(liveNow == renewed, "Expected ~/.codex to hold the imported sign-in.")
+    try expect(manager.accountOwningLiveHome()?.id == "live", "Expected the account in use not to change.")
+
+    // An id from someone else's file must not choose where the home lands.
+    var hostile = bundle
+    hostile.accounts[0].id = "../../../escaped"
+    hostile.accounts[0].fingerprint = nil
+    hostile.accounts[0].auth = try XCTUnwrap(String(data: renewed, encoding: .utf8), "auth")
+    let fresh = environment(scratch())
+    let target = try AccountManager(environment: fresh)
+    let landed = try AccountTransfer.restore(hostile, into: target, replacingKnown: false)
+    let imported = try XCTUnwrap(landed.added.first, "imported account")
+    try expect(imported.id != "../../../escaped", "Expected the id to be refused.")
+    try expect(imported.homePath.hasPrefix(fresh.accountsDirectory.path), "Expected the home to stay inside the state directory.")
+    try expect(!FileManager.default.fileExists(atPath: fresh.accountsDirectory.appendingPathComponent("../../../escaped").path), "Expected nothing outside the state directory.")
+}
+
 func testImportRejectsTamperedAndForeignFiles() throws {
     let env = environment(scratch())
     let manager = try AccountManager(environment: env)
@@ -543,6 +587,7 @@ let tests: [(String, () throws -> Void)] = [
     ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped),
     ("reauth refuses to overwrite with a different account", testReauthRefusesToOverwriteWithADifferentAccount),
     ("export carries accounts to another machine", testExportCarriesAccountsToAnotherMachine),
+    ("import keeps the live home in step and distrusts ids", testImportKeepsTheLiveHomeInStepAndDistrustsIDs),
     ("import rejects tampered and foreign files", testImportRejectsTamperedAndForeignFiles)
 ]
 
