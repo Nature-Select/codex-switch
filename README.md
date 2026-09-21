@@ -20,7 +20,7 @@ Codex 同一时间只认 `~/.codex/auth.json` 里的一个账号。手上有多�
 
 `codex-switch` 把每个账号存在各自独立的 Codex home 里，切换时先把当前凭据归位、再原子地换入目标账号，并顺带告诉你每个账号还剩多少额度、什么时候重置。
 
-它不做这些事：不会绕过 Codex 的任何限制；不会把你的凭据传到任何地方；除非你显式开启 `auto`，否则不会自己切换账号。
+它不做这些事：不会绕过 Codex 的任何限制；不会自己把凭据传到任何地方（只有你显式跑 `export` 才会写出一份）；除非你显式开启 `auto`，否则不会自己切换账号。
 
 ### 安装
 
@@ -60,6 +60,8 @@ env PREFIX=$HOME/.local bash scripts/install.sh  # 或装到自己的目录
 | `codex-switch reauth <账号>` | 登录被吊销后重新登录，保留原条目 |
 | `codex-switch rename <账号> <名字>` | 改显示名 |
 | `codex-switch forget <账号>` | 移除账号 |
+| `codex-switch export <文件>` | 把账号连同凭据导出成一个文件 |
+| `codex-switch import <文件>` | 从这样的文件导入账号 |
 | `codex-switch repair` | 认领磁盘上有凭据、但注册表里没记录的目录 |
 | `codex-switch migrate` | 从旧的 `Codex Manager` 目录导入账号 |
 | `codex-switch update` | 更新 codex-switch 自己 |
@@ -111,6 +113,34 @@ codex-switch reauth hayseed          # 浏览器登录那个账号
 
 如果登错了账号，工具会拒绝写入并告诉你实际登录的是谁 —— 想把那个新账号存下来用 `add`。
 
+### 搬到另一台机器
+
+导出是一个 JSON 文件，里面是每个账号的显示名、额度快照，以及它的 `auth.json` 原文：
+
+```fish
+codex-switch export ~/codex-accounts.json          # 全部
+codex-switch export ~/work.json --only 主号,备用号   # 只导几个
+```
+
+拷到另一台 Mac 上导入：
+
+```fish
+codex-switch import ~/codex-accounts.json
+```
+
+或者一条命令直接过去：
+
+```fish
+codex-switch export - | ssh other-mac codex-switch import -
+```
+
+导出文件里不含任何本机路径，所以对端的用户名、数据目录放哪都无所谓。导入按凭据所属的账号去重，同一个文件导第二次不会多出一份；已经存在的账号默认原样不动，`--replace` 才会用文件里的凭据覆盖它们。导入不会切换账号，当前在用的那个不受影响（只有 `--replace` 覆盖到它时，`~/.codex` 里的那份也会同步更新成导入的凭据 —— 还是同一个账号）。导完 `codex-switch refresh --all` 把额度刷新一下即可。
+
+两点注意：
+
+- 这个文件等同于一串可以直接登录的凭据。它以 `0600` 写入，传输请走 `scp` 之类的通道，别过微信/网盘，落地后删掉。
+- 同一个账号别在两台机器上同时用：Codex 刷新 token 时会轮换，一边刷新可能让另一边的凭据失效（`list` 里会标成 `!`，只能 `reauth` 救回来）。
+
 ### 更新自己
 
 ```fish
@@ -153,12 +183,12 @@ Codex 实际读取的仍然是 `~/.codex/auth.json`。`codex-switch use` 会：
 
 ### 隐私与安全
 
-- 凭据只保存在本机，不上传任何地方
+- 凭据只保存在本机，不会自动上传到任何地方（`export` 是唯一会把它们写到别处的命令，且需要你显式执行）
 - 注册表 `accounts.json` 只存非敏感元数据；账号 id 以 SHA-256 指纹存储，不存原值
 - 所有目录 `0700`、凭据文件 `0600`，写入采用原子替换
 - 注册表写入前会检查文件是否被其他进程改动，避免并发覆盖
 - `forget` 默认会删掉该账号的本地凭据，想保留加 `--keep-credentials`
-- 凭据只有这一份，建议定期备份：
+- 凭据只有这一份，建议定期备份（`codex-switch export` 出来的文件同样可以当备份，导回来用 `import`）：
   ```fish
   tar -czf ~/codex-switch-backup-(date +%Y%m%d).tar.gz -C ~/Library/"Application Support" codex-switch
   ```
@@ -193,7 +223,7 @@ Codex reads exactly one account from `~/.codex/auth.json`. With more than one ac
 
 `codex-switch` parks every account in its own isolated Codex home, swaps the target in atomically, and shows how much quota each account has left and when it resets.
 
-It does not bypass any Codex limit, never sends credentials anywhere, and never switches accounts on its own unless you enable `auto`.
+It does not bypass any Codex limit, never sends credentials anywhere on its own — only an explicit `export` writes them out — and never switches accounts on its own unless you enable `auto`.
 
 ### Install
 
@@ -218,6 +248,8 @@ Or grab the release tarball (universal arm64 + x86_64), or build from source wit
 | `codex-switch refresh [account]` | Ask Codex for fresh quota numbers |
 | `codex-switch reauth <account>` | Sign in again after a login was revoked |
 | `codex-switch rename` / `forget` | Relabel or drop an account |
+| `codex-switch export <file>` | Write saved accounts, credentials included, to one file |
+| `codex-switch import <file>` | Add the accounts from such a file |
 | `codex-switch repair` | Re-register account directories missing from the registry |
 | `codex-switch migrate` | Import accounts from a `Codex Manager` directory |
 | `codex-switch update` | Update codex-switch itself |
@@ -235,13 +267,25 @@ codex-switch auto disable
 
 `enable` installs a launchd job that does the checking, so nothing has to stay open in a terminal, and logs each switch to `~/Library/Logs/codex-switch/auto.log`. Quota is judged on the tightest window an account reports, and the target must itself be above the threshold.
 
+### Moving to another Mac
+
+```bash
+codex-switch export ~/codex-accounts.json    # or --only main,backup
+codex-switch import ~/codex-accounts.json    # on the other Mac
+codex-switch export - | ssh other-mac codex-switch import -
+```
+
+The export is one JSON file holding each account's label, last known quota, and its `auth.json` verbatim — no local paths, so the receiving Mac can keep its accounts wherever it likes. Imports are matched by the account the credentials belong to, so running the same import twice adds nothing; accounts already saved there are left alone unless `--replace` is passed, and nothing is switched — the account in use stays in use.
+
+The file is a set of working sign-ins written `0600`. Move it like a private key and delete it afterwards, and avoid using one account from two Macs at once — Codex rotates refresh tokens, so one machine renewing can invalidate the other's copy.
+
 ### How it works
 
 Accounts live in `~/Library/Application Support/codex-switch/accounts/<id>/home/`. A switch parks the credentials currently in `~/.codex` back with their owner (keeping any token refresh that happened meanwhile), writes the target's credentials in atomically, and restarts the ChatGPT desktop app if it is running — while running, that app owns `~/.codex` too, so skipping the restart lets it write the old account back.
 
 ### Privacy
 
-Credentials never leave the Mac. The registry stores only non-sensitive metadata, with account ids kept as SHA-256 fingerprints. Directories are `0700`, credential files `0600`, and writes are atomic.
+Credentials stay on the Mac unless you export them yourself. The registry stores only non-sensitive metadata, with account ids kept as SHA-256 fingerprints. Directories are `0700`, credential files `0600`, and writes are atomic.
 
 ### Development
 

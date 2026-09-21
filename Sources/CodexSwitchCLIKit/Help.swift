@@ -41,10 +41,45 @@ enum Help {
                 "  --timeout    Seconds to wait for the browser sign-in (default 300).",
                 "  --no-open    Do not open the verification page automatically."
             ])
-        case "adopt", "import":
+        case "adopt":
             page("codex-switch adopt [--label <name>]", [
                 "Save the account you are already signed in as, so it can be switched",
                 "back to later."
+            ])
+        case "export":
+            page("codex-switch export <file> [--only <accounts>] [--force]", [
+                "Write every saved account — credentials included — to one JSON file",
+                "that another Mac can import.",
+                "",
+                "  <file>     Where to write it; `-` writes to stdout.",
+                "  --only     Comma-separated accounts to export instead of all of them.",
+                "  --force    Overwrite the file if it already exists.",
+                "",
+                "The file holds live sign-ins and is written owner-only (0600). Move it",
+                "the way you would move a private key, and delete it once it has landed.",
+                "",
+                "It records no paths, so the other Mac can keep its accounts wherever",
+                "it likes. Over ssh in one go:",
+                "",
+                "  codex-switch export - | ssh other-mac codex-switch import -"
+            ])
+        case "import":
+            page("codex-switch import <file> [--replace]", [
+                "Add the accounts from a `codex-switch export` file to this Mac.",
+                "Each one lands in its own home here, and nothing is switched — the",
+                "account in use stays in use.",
+                "",
+                "  <file>      The export to read; `-` reads stdin.",
+                "  --replace   Also overwrite the credentials of accounts already saved",
+                "              here. Without it, those are left alone. If one of them is",
+                "              the account in use, ~/.codex is updated with it too —",
+                "              still the same account, so nothing is switched.",
+                "",
+                "Accounts are matched by the account the credentials belong to, not by",
+                "name, so importing the same file twice adds nothing the second time.",
+                "",
+                "To save the account you are signed in as right now, that is",
+                "`codex-switch adopt`."
             ])
         case "auto":
             page("codex-switch auto [status] | enable [options] | disable", [
@@ -140,7 +175,7 @@ enum Help {
         Term.say("  " + Layout.padRight("-h, --help", 24) + "Help; `codex-switch help <command>` for details")
         Term.say()
         Term.say(Style.faint("Accounts can be named by list number, label, email, or id."))
-        Term.say(Style.faint("Credentials never leave this Mac: each account keeps its own isolated Codex home."))
+        Term.say(Style.faint("Each account keeps its own isolated Codex home; credentials leave this Mac only when you export them."))
     }
 
     private static let commands: [(String, String)] = [
@@ -149,6 +184,8 @@ enum Help {
         ("use <account>", "Switch the account Codex uses"),
         ("add", "Sign in to another account and save it"),
         ("adopt", "Save the account you are signed in as"),
+        ("export <file>", "Write saved accounts to a file for another Mac"),
+        ("import <file>", "Add accounts from such a file"),
         ("auto", "Switch automatically when quota runs low"),
         ("refresh [<account>]", "Ask Codex for fresh quota numbers"),
         ("reauth <account>", "Sign in again to an account whose login was revoked"),

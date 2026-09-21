@@ -19,7 +19,8 @@
 
 - Keep presentation in `CodexSwitchCLIKit` and behavior in `CodexSwitchKit`; the domain never prints.
 - No new dependencies without a clear reason.
-- Credentials stay local, per-account, `0700`/`0600`, written atomically. Never log them, never copy them anywhere but an account home or `CODEX_HOME`.
+- Credentials stay local, per-account, `0700`/`0600`, written atomically. Never log them, never copy them anywhere but an account home, `CODEX_HOME`, or a file the user explicitly named — `export` is the only command that writes them elsewhere, and it says so.
+- `export` / `import` move accounts between Macs. The bundle carries no absolute paths, and an import is matched by credential fingerprint, so re-importing is a no-op instead of a duplicate.
 - Account rotation exists only as the opt-in `auto` command. It ships disabled, and `auto disable` must leave nothing running.
 - Commands stay scriptable: honor `--json`, send errors to stderr, exit non-zero on failure (`2` usage, `130` cancelled).
 - Never prompt when stdin is not a TTY or `--json` is set; require `--yes` instead.

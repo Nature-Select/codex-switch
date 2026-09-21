@@ -138,6 +138,7 @@ public enum CodexSwitchError: LocalizedError {
     case credentialsMissing(URL)
     case accountUnknown
     case loginIncomplete
+    case bundleUnreadable(String)
 
     public var errorDescription: String? {
         switch self {
@@ -157,6 +158,8 @@ public enum CodexSwitchError: LocalizedError {
             return "That account is not in the registry."
         case .loginIncomplete:
             return "The sign-in never completed, so nothing was saved."
+        case let .bundleUnreadable(message):
+            return message
         }
     }
 }
