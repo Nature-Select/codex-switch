@@ -211,5 +211,5 @@ public final class AppServerSession: @unchecked Sendable {
 }
 
 public enum Version {
-    public static let current = "1.4.0"
+    public static let current = "1.4.1"
 }

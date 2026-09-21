@@ -39,6 +39,7 @@
 - `Version.current` in `Sources/CodexSwitchKit/AppServer.swift` is the single source of truth; the release workflow refuses a tag that disagrees with it.
 - Tagging `v<version>` builds a universal binary, publishes it with checksums, and opens a PR that points the Homebrew formula at the new tarball. `main` requires PRs, so that bump is never pushed directly.
 - `codex-switch update` reads the published release, so a release without the `codex-switch-macos-universal.tar.gz` asset breaks self-update.
+- The formula bump lands after the release, so for a while `brew upgrade` has nothing to install and still exits 0. `update` reports the version it reads back from the binary, never the one it hoped for.
 
 ## Build And Test
 

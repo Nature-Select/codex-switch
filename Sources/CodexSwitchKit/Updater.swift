@@ -54,6 +54,22 @@ public enum Updater {
         return .standalone(binary: executable)
     }
 
+    /// What the installed binary answers now.
+    ///
+    /// `brew upgrade` exits 0 when it had nothing to do, which is exactly what
+    /// happens in the window between a release being published and its formula
+    /// bump landing in the tap — so the exit status alone cannot tell us
+    /// whether anything was installed. Asking the binary can.
+    public static func installedVersion(of executable: URL) -> String? {
+        guard let output = Shell.capture(executable.path, ["version"]) else { return nil }
+        guard let version = output.split(whereSeparator: \.isWhitespace).last.map(String.init),
+              version.first?.isNumber == true
+        else {
+            return nil
+        }
+        return version
+    }
+
     public static func latest() async throws -> Release {
         do {
             return try await latestFromAPI()
