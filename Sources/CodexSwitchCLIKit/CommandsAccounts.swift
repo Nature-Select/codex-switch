@@ -374,8 +374,20 @@ extension Commands {
             guard Shell.status("/bin/sh", ["-lc", "brew update && brew upgrade \(formula)"]) == 0 else {
                 throw CLIError("`brew upgrade \(formula)` failed. Run it by hand to see why.")
             }
+            // A release is published before its formula bump is merged, so brew
+            // can report success having installed nothing at all. Say what
+            // landed, not what was hoped for.
+            let landed = Updater.installedVersion(of: binary)
+            if let landed, landed != release.version {
+                throw CLIError("""
+                    Homebrew had nothing to install — it still carries \(landed). The formula for \
+                    \(release.version) has not reached the tap yet; a release is published first and \
+                    its formula bump follows. Try again shortly, or take the tarball from \
+                    https://github.com/Nature-Select/codex-switch/releases/tag/v\(release.version)
+                    """)
+            }
             if !json {
-                Term.say(Style.green("✓") + " Updated to \(release.version).")
+                Term.say(Style.green("✓") + " Updated to \(landed ?? release.version).")
             }
         case let .standalone(target):
             if !arguments.flag("yes"), Term.interactive, !json {

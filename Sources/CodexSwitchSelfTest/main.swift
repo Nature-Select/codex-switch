@@ -538,6 +538,31 @@ func testImportRejectsTamperedAndForeignFiles() throws {
     } catch is CodexSwitchError {}
 }
 
+func testUpdateReadsBackWhatWasInstalled() throws {
+    let root = scratch()
+    try Privacy.makeDirectory(root)
+
+    func fakeBinary(named name: String, printing line: String) throws -> URL {
+        let url = root.appendingPathComponent(name)
+        try "#!/bin/sh\necho '\(line)'\n".write(to: url, atomically: true, encoding: .utf8)
+        chmod(url.path, 0o700)
+        return url
+    }
+
+    // A brew upgrade that installed nothing still exits 0, so `update` asks the
+    // binary itself what it is now — that answer is the only honest one.
+    let upgraded = try fakeBinary(named: "new", printing: "codex-switch 9.9.9")
+    try expect(Updater.installedVersion(of: upgraded) == "9.9.9", "Expected the version the binary reports.")
+
+    let stale = try fakeBinary(named: "old", printing: "codex-switch 1.3.0")
+    let landed = try XCTUnwrap(Updater.installedVersion(of: stale), "installed version")
+    try expect(landed != "1.4.0", "Expected a stale install to be distinguishable from the release.")
+
+    let mute = try fakeBinary(named: "mute", printing: "")
+    try expect(Updater.installedVersion(of: mute) == nil, "Expected unparsable output to report nothing.")
+    try expect(Updater.installedVersion(of: root.appendingPathComponent("absent")) == nil, "Expected a missing binary to report nothing.")
+}
+
 /// The self-tests are synchronous; this bridges the few async entry points.
 /// The result travels through a reference so nothing mutable is captured by the
 /// concurrently-running task.
@@ -584,6 +609,7 @@ let tests: [(String, () throws -> Void)] = [
     ("orphan directories are detected", testOrphanDirectoriesAreDetected),
     ("legacy import copies accounts without moving them", testLegacyImportCopiesAccountsWithoutMovingThem),
     ("update compares versions and spots homebrew", testUpdateComparesVersionsAndSpotsHomebrew),
+    ("update reads back what was installed", testUpdateReadsBackWhatWasInstalled),
     ("revoked accounts are recognised and skipped", testRevokedAccountsAreRecognisedAndSkipped),
     ("reauth refuses to overwrite with a different account", testReauthRefusesToOverwriteWithADifferentAccount),
     ("export carries accounts to another machine", testExportCarriesAccountsToAnotherMachine),
